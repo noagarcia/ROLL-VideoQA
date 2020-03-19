@@ -19,7 +19,7 @@ This code runs on Python 3.6 and PyTorch 0.4. We recommend using [Anaconda](http
 ```
 conda create --name roll-videoqa python=3.6
 conda activate roll-videoqa
-conda install -c anaconda numpy pandas 
+conda install -c anaconda numpy pandas scikit-learn 
 conda install -c conda-forge visdom tqdm
 conda install pytorch==1.0.1 torchvision==0.2.2 -c pytorch
 pip install pytorch-transformers
@@ -29,8 +29,13 @@ List of dependencies:
 - [pandas](https://pandas.pydata.org/)
 - [PyTorch](https://pytorch.org/) 1.0.1 with [torchvision](https://pytorch.org/docs/stable/torchvision/index.html).
 - [PyTorch-Transformers](https://pypi.org/project/pytorch-transformers/)
+- [scikit-learn](https://scikit-learn.org/)
 - [tqdm](https://github.com/tqdm/tqdm) for progress bar.
 - [Visdom](https://github.com/facebookresearch/visdom) for data visualization.
+
+Optional:
+- [Beautiful Soup](https://www.crummy.com/software/BeautifulSoup/bs4/doc/) to download episode summaries (not necessary, as already provided).
+
 
 
 
@@ -43,10 +48,16 @@ Both datasets contain videos from the Big Bang Theory, so list of characters and
 
 ## ROLL on KnowIT VQA
 #### Data
-Download annotations from [here](https://knowit-vqa.github.io/) and extract the zip file contents into `Data/` directory. You should get 3 csv files inside `Data/knowit_data/`.
+1. Download annotations from [here](https://knowit-vqa.github.io/) and extract the zip file contents into `Data/` directory. 
+You should get 3 csv files inside `Data/knowit_data/`.
+2. The episode summaries used as source of external knowledge in the paper are placed in `Data/KnowledgeBase/tbbt_summaries.csv`. 
+The script used to download the summaries can be found in `Tools/download_summaries.py`.
+3. Video story identification has been already pre-computed and can be found in `Data/KnowledgeBase/`.
+The script used to identify each episode can be found in `Tools/video_story_identification.py`.
+
 
 #### Training
-If you want to see the visualizations during training, first start the Visdom server in a terminal. Visualizations can be accessed at `http://localhost:8097`.
+To see the visualizations during training, first start Visdom in a terminal. Visualizations can be accessed at `http://localhost:8097`.
 ``` 
 python -m visdom.server
 ```
@@ -57,8 +68,8 @@ To train ROLL on KnowIT VQA datset run:
 bash train.sh knowit
 ```
 The training is performed in two stages: 
-1) First, all the three branches (read, observe, recall) are pre-trained.
-2) Then, the output for each branch are fused and trained together.
+1) First, all the three branches (read, observe, recall) are pretrained.
+2) Then, the network that fuses the outputs from the branches is trained using the modality weighting mechanism.
 
 #### Inference
 
