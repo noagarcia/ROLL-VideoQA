@@ -5,6 +5,6 @@ then
     # First, each branch is pretrained independently
     python Source/branch_read.py --dataset $1
 else
-    echo "Undefined parameter. Use 'clean' as \$1 parameter or remove parameters."
+    echo "Undefined parameter. Use 'knowit' or 'tvqa' as \$1 parameter."
 fi
 

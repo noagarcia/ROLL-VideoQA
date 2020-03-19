@@ -140,6 +140,9 @@ if __name__ == "__main__":
     if args.dataset == 'knowit':
         from Source.dataloader_knowit import ReadBranchData
     elif args.dataset == 'tvqa':
-        from Source.dataloader_tvqa import ReadBranchData
+        # from Source.dataloader_tvqa import ReadBranchData
+        logger.error('Sorry, TVQA+ dataset not implemented yet.')
+        import sys
+        sys.exit(0)
 
     pretrain_read_branch(args)

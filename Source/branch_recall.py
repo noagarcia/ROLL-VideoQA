@@ -146,6 +146,9 @@ if __name__ == "__main__":
     if args.dataset == 'knowit':
         from Source.dataloader_knowit import RecallBranchData
     elif args.dataset == 'tvqa':
-        from Source.dataloader_tvqa import RecallBranchData
+        # from Source.dataloader_tvqa import RecallBranchData
+        logger.error('Sorry, TVQA+ dataset not implemented yet.')
+        import sys
+        sys.exit(0)
 
     pretrain_recall_branch(args)
