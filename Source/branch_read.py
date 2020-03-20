@@ -114,7 +114,7 @@ def pretrain_read_branch(args):
         logger.info('*** Read branch training ***')
         branch_training(args, model, modeldir, n_gpu, trainDataObject, valDataObject)
 
-    # For inference, load trained weights
+    # For extracting branch embeddings, load trained weights
     model = ReadTransformer.from_pretrained(modeldir)
     model.to(args.device)
     if n_gpu > 1:

@@ -22,7 +22,7 @@ np.set_printoptions(threshold=sys.maxsize)
 
 def get_params():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_dir", default='data/', type=str)
+    parser.add_argument("--data_dir", default='Data/', type=str)
     parser.add_argument("--dataset", default='knowit', type=str, help='knowit or tvqa')
     parser.add_argument("--bert_model", default='bert-base-uncased', type=str)
     parser.add_argument("--do_lower_case", default=True)
@@ -39,6 +39,7 @@ def get_params():
     parser.add_argument("--num_max_slices", default=5, type=int)
     parser.add_argument("--workers", default=8)
     parser.add_argument("--train_name", default='RecallBranch', type=str)
+    parser.add_argument("--do_plot", default=True)
     args, unknown = parser.parse_known_args()
     return args
 
@@ -120,13 +121,13 @@ def pretrain_recall_branch(args):
         branch_training(args, model, modeldir, n_gpu, trainDataObject, valDataObject)
 
 
-    # For inference, load trained weights
+    # For extracting branch embeddings, load trained weights
     model = RecallTransformer.from_pretrained(modeldir)
     model.to(args.device)
     if n_gpu > 1:
         model = torch.nn.DataParallel(model)
 
-    # Get Read Branch embeddings for each dataset split
+    # Get Recall Branch embeddings for each dataset split
     logger.info('*** Get read branch embeddgins for each data split ***')
     trainDataObject = RecallBranchData(args, split='train', tokenizer=tokenizer)
     valDataObject = RecallBranchData(args, split='val', tokenizer=tokenizer)

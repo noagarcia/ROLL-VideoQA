@@ -71,7 +71,7 @@ The training is performed in two stages:
 1) First, all the three branches (read, observe, recall) are pretrained.
 2) Then, the network that fuses the outputs from the branches is trained using the modality weighting mechanism.
 
-#### Inference
+#### Evaluation
 
 
 ## ROLL on TVQA+
@@ -81,7 +81,7 @@ TODO.
 ## TODO
 - [X] Read branch
 - [ ] Observe branch
-- [ ] Recall branch
+- [X] Recall branch
 - [ ] Fusion
 - [ ] TVQA+ code
 - [ ] Results table

@@ -4,6 +4,8 @@ import pandas as pd
 import os
 import re
 import logging
+import numpy as np
+import math
 logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                     datefmt = '%m/%d/%Y %H:%M:%S',
                     level = logging.INFO)
@@ -78,7 +80,7 @@ class ReadBranchData(data.Dataset):
         df = load_knowit_data(args, split)
         self.samples = self.get_data(df)
         self.num_samples = len(self.samples)
-        logger.info('ReadData branch ready with %d samples' % self.num_samples)
+        logger.info('ReadBranchData ready with %d samples' % self.num_samples)
 
 
     # Load data into list of DataSamples
@@ -147,5 +149,128 @@ class ReadBranchData(data.Dataset):
         segment_ids = torch.tensor([data[3] for data in choice_features], dtype=torch.long)
         qid = torch.tensor(sample.qid, dtype=torch.long)
         label = torch.tensor(sample.label, dtype=torch.long)
-
         return input_ids, input_mask, segment_ids, qid, label
+
+
+# Dataloader for the Recall Branch
+class RecallBranchData(data.Dataset):
+
+    def __init__(self, args, split, tokenizer):
+        self.tokenizer = tokenizer
+        self.max_seq_length = args.max_seq_length
+        self.num_max_slices = args.num_max_slices
+        self.stride = args.seq_stride
+        df = load_knowit_data(args, split)
+
+        # Load file with the correspondent episodes to each video clip
+        video_story_id_file = os.path.join(args.data_dir, 'KnowledgeBase/retrieved_episode_from_scenes_%s.csv' % split)
+        self.dfretrieval = pd.read_csv(video_story_id_file, delimiter='\t')
+
+        # Load episode summaries used as source of external knowledge
+        dfkg = pd.read_csv(os.path.join(args.data_dir, 'KnowledgeBase/tbbt_summaries.csv'))
+        self.recap_dict = dfkg.set_index('Episode').T.to_dict('list')
+
+        # Prepare pairs
+        self.samples = self.get_data(df)
+        self.num_samples = len(self.samples)
+        logger.info('RecallBranchData ready with %d samples' % self.num_samples)
+
+    def get_data(self, df):
+        samples = []
+        for index, row in df.iterrows():
+            question = row['question']
+            answer1 = row['answer1']
+            answer2 = row['answer2']
+            answer3 = row['answer3']
+            answer4 = row['answer4']
+            label = int(df['idxCorrect'].iloc[index] - 1)
+
+            # First find episode, then find episode summary
+            episode = self.dfretrieval[self.dfretrieval['Scene'] == row['scene']]['Found Episode'].values[0]
+            season = episode[1:3]
+            number = episode[4:6]
+            idepi = int(str(int(season)) + number)
+            episode_summary = self.recap_dict[idepi][0]
+
+            # Add sample to list
+            samples.append(DataSample(qid=index,
+                                      question=question,
+                                      answer1=answer1,
+                                      answer2=answer2,
+                                      answer3=answer3,
+                                      answer4=answer4,
+                                      subtitles = None,
+                                      vision=None,
+                                      knowledge=episode_summary,
+                                      label=label))
+
+        return samples
+
+
+    def __len__(self):
+        return self.num_samples
+
+
+    def __getitem__(self, index):
+        # Convert each sample into 4*num_max_slices BERT input sequences as:
+        # [CLS] + question + [SEP] + answer1 + kg_part_1 [SEP]
+        # [CLS] + question + [SEP] + answer2 + kg_part_1 [SEP]
+        # [CLS] + question + [SEP] + answer3 + kg_part_1 [SEP]
+        # [CLS] + question + [SEP] + answer4 + kg_part_1 [SEP]
+        # [CLS] + question + [SEP] + answer1 + kg_part_2 [SEP]
+        # [CLS] + question + [SEP] + answer2 + kg_part_2 [SEP]
+        # ...
+        # [CLS] + question + [SEP] + answer4 + kg_part_num_max_slices [SEP]
+
+        sample = self.samples[index]
+        question_tokens = self.tokenizer.tokenize(sample.question)
+        all_knowledge_tokens = self.tokenizer.tokenize(sample.kg)
+        list_answer_tokens = []
+        for answer in sample.answers:
+            answer_tokens = self.tokenizer.tokenize(answer)
+            list_answer_tokens.append(answer_tokens)
+
+        # Compute maximum window length for knowledge slices based on question and answer lengths
+        max_qa_len = len(question_tokens) + max([len(a) for a in list_answer_tokens])
+        len_extra_tokens = 3
+        len_kg_window = self.max_seq_length - max_qa_len - len_extra_tokens
+
+        # Slice knowlegde according to window and stride
+        list_knowledge_tokens = []
+        num_kg_pieces = min(math.ceil((len(all_knowledge_tokens) - len_kg_window) / self.stride ) + 1, self.num_max_slices)
+        num_kg_pieces = max(num_kg_pieces, 1)
+        for n in list(range(num_kg_pieces)):
+            maxpos = min(len_kg_window + (self.stride * n), len(all_knowledge_tokens))
+            tokens = all_knowledge_tokens[self.stride*n:maxpos]
+            list_knowledge_tokens.append(tokens)
+
+        # Transformer input features
+        sample_input_ids = np.zeros((self.num_max_slices, len(sample.answers), self.max_seq_length))
+        sample_input_mask = np.zeros((self.num_max_slices, len(sample.answers), self.max_seq_length))
+        sample_segment_ids = np.zeros((self.num_max_slices, len(sample.answers), self.max_seq_length))
+        for kg_index, knowledge_tokens in enumerate(list_knowledge_tokens):
+            for answer_index, answer_tokens in enumerate(list_answer_tokens):
+
+                start_tokens = question_tokens[:]
+                ending_tokens = answer_tokens + knowledge_tokens[:]
+
+                sequence_tokens = [self.tokenizer.cls_token] + start_tokens + [self.tokenizer.sep_token] + ending_tokens + [self.tokenizer.sep_token]
+                segment_ids = [0] * (len(start_tokens) + 2) + [1] * (len(ending_tokens) + 1)
+                input_ids = self.tokenizer.convert_tokens_to_ids(sequence_tokens)
+                input_mask = [1] * len(input_ids)
+
+                padding = [self.tokenizer.pad_token_id] * (self.max_seq_length - len(input_ids))
+                input_ids += padding
+                input_mask += padding
+                segment_ids += padding
+
+                sample_input_ids[kg_index, answer_index, :] = input_ids
+                sample_input_mask[kg_index, answer_index, :] = input_mask
+                sample_segment_ids[kg_index, answer_index, :] = segment_ids
+
+        sample_input_ids = torch.tensor(sample_input_ids, dtype=torch.long)
+        sample_input_mask = torch.tensor(sample_input_mask, dtype=torch.long)
+        sample_segment_ids = torch.tensor(sample_segment_ids, dtype=torch.long)
+        qid = torch.tensor(sample.qid, dtype=torch.long)
+        label = torch.tensor(sample.label, dtype=torch.long)
+        return sample_input_ids, sample_input_mask, sample_segment_ids, qid, label
