@@ -163,11 +163,11 @@ class RecallBranchData(data.Dataset):
         df = load_knowit_data(args, split)
 
         # Load file with the correspondent episodes to each video clip
-        video_story_id_file = os.path.join(args.data_dir, 'KnowledgeBase/retrieved_episode_from_scenes_%s.csv' % split)
+        video_story_id_file = os.path.join(args.data_dir, 'knowledge_base/retrieved_episode_from_scenes_%s.csv' % split)
         self.dfretrieval = pd.read_csv(video_story_id_file, delimiter='\t')
 
         # Load episode summaries used as source of external knowledge
-        dfkg = pd.read_csv(os.path.join(args.data_dir, 'KnowledgeBase/tbbt_summaries.csv'))
+        dfkg = pd.read_csv(os.path.join(args.data_dir, 'knowledge_base/tbbt_summaries.csv'))
         self.recap_dict = dfkg.set_index('Episode').T.to_dict('list')
 
         # Prepare pairs
