@@ -35,22 +35,21 @@ For data preparation, follow instructions in [DATA.md](DATA.md).
 ### ROLL on KnowIT VQA
 
 #### Training
-To see the visualizations during training, first start Visdom in a terminal. Visualizations can be accessed at `http://localhost:8097`.
-``` 
-python -m visdom.server
-```
-
-To train ROLL on KnowIT VQA datset run:
-
-```
-bash train.sh knowit
-```
-The training is performed in two stages: 
-1) First, all the three branches (read, observe, recall) are pretrained.
-2) Then, the network that fuses the outputs from the branches is trained using the modality weighting mechanism.
-
+1. **Start Visdom Server**. To visualize the training plots, first start the Visdom server: `python -m visdom.server`. 
+Plots can be found by visiting `http://localhost:8097` in a browser.
+2. **Pretrain branches**. The three branches (read, observe, recall) are first pretrained independently:
+    ```
+    python Source/branch_read.py --dataset knowit
+    python Source/branch_recall.py --dataset knowit
+    # TODO: python Source/branch_observe.py --dataset knowit
+    ```
+3. **Multimodality fusion**. The outputs from the branches are fused and the network is trained one last time using the modality weighting mechanism.
+    ```
+    # TODO
+    ```
+    
 #### Evaluation
-
+TODO.
 
 ### ROLL on TVQA+
 TODO.
