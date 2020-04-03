@@ -39,9 +39,18 @@ For data preparation, follow instructions in [DATA.md](DATA.md).
 Plots can be found by visiting `http://localhost:8097` in a browser.
 2. **Pretrain branches**. The three branches (read, observe, recall) are first pretrained independently:
     ```
+    # Read branch training using the subtitles
     python Source/branch_read.py --dataset knowit
+    
+    # Recall branch training using the video summaries
     python Source/branch_recall.py --dataset knowit
-    # TODO: python Source/branch_observe.py --dataset knowit
+    
+    # For the observe branch, the video descriptions need to be computed first.
+    # The descriptions will be at Data/knowit_observe/scenes_descriptions.csv
+    python Source/generate_scene_description.py knowit
+    
+    # Observe branch training using the generated descriptions
+    python Source/branch_observe.py --dataset knowit
     ```
 3. **Multimodality fusion**. The outputs from the branches are fused and the network is trained one last time using the modality weighting mechanism.
     ```
@@ -57,7 +66,7 @@ TODO.
 
 ## TODO
 - [X] Read branch
-- [ ] Observe branch
+- [X] Observe branch
 - [X] Recall branch
 - [ ] Fusion
 - [ ] TVQA+ code

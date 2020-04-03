@@ -152,6 +152,95 @@ class ReadBranchData(data.Dataset):
         return input_ids, input_mask, segment_ids, qid, label
 
 
+# Dataloader for the Read Branch
+class ObserveBranchData(data.Dataset):
+
+    def __init__(self, args, split, tokenizer):
+        self.tokenizer = tokenizer
+        self.max_seq_length = args.max_seq_length
+        df = load_knowit_data(args, split)
+        df_descriptions = pd.read_csv(os.path.join(args.descriptions_file), delimiter='\t')
+        df_descriptions.replace(np.nan, '', inplace = True)
+        self.samples = self.get_data(df, df_descriptions)
+        self.num_samples = len(self.samples)
+        logger.info('ReadBranchData ready with %d samples' % self.num_samples)
+
+
+    # Load data into list of DataSamples
+    def get_data(self, df, df_descriptions):
+        samples = []
+        for index, row in df.iterrows():
+            question = row['question']
+            answer1 = row['answer1']
+            answer2 = row['answer2']
+            answer3 = row['answer3']
+            answer4 = row['answer4']
+            label = int(df['idxCorrect'].iloc[index] - 1)
+
+            # Get scene description
+            scenename = row['scene']
+            scene_description = ''
+            if len(df_descriptions[df_descriptions['Scene'] == scenename]['Description']) > 0:
+                scene_description = df_descriptions[df_descriptions['Scene'] == scenename]['Description'].values[0]
+
+            samples.append(DataSample(qid=index,
+                                      question=question,
+                                      answer1=answer1,
+                                      answer2=answer2,
+                                      answer3=answer3,
+                                      answer4=answer4,
+                                      subtitles = None,
+                                      vision=scene_description,
+                                      knowledge=None,
+                                      label=label))
+        return samples
+
+
+    def __len__(self):
+        return self.num_samples
+
+
+    def __getitem__(self, index):
+        # Convert each sample into 4 BERT input sequences as:
+        # [CLS] + scene description + question + [SEP] + answer1 + [SEP]
+        # [CLS] + scene description + question + [SEP] + answer2 + [SEP]
+        # [CLS] + scene description + question + [SEP] + answer3 + [SEP]
+        # [CLS] + scene description + question + [SEP] + answer4 + [SEP]
+
+        sample = self.samples[index]
+        description_tokens = self.tokenizer.tokenize(sample.vision)
+        question_tokens = self.tokenizer.tokenize(sample.question)
+        choice_features = []
+        for answer_index, answer in enumerate(sample.answers):
+
+            start_tokens = description_tokens[:] + question_tokens[:]
+            ending_tokens = self.tokenizer.tokenize(answer)
+
+            _truncate_seq_pair_inv(start_tokens, ending_tokens, self.max_seq_length - 3)
+            tokens = [self.tokenizer.cls_token] + start_tokens + [self.tokenizer.sep_token] + ending_tokens + [self.tokenizer.sep_token]
+            segment_ids = [0] * (len(start_tokens) + 2) + [1] * (len(ending_tokens) + 1)
+            input_ids = self.tokenizer.convert_tokens_to_ids(tokens)
+            input_mask = [1] * len(input_ids)
+
+            padding = [self.tokenizer.pad_token_id] * (self.max_seq_length - len(input_ids))
+            input_ids += padding
+            input_mask += padding
+            segment_ids += padding
+
+            assert len(input_ids) == self.max_seq_length
+            assert len(input_mask) == self.max_seq_length
+            assert len(segment_ids) == self.max_seq_length
+
+            choice_features.append((tokens, input_ids, input_mask, segment_ids))
+
+        input_ids = torch.tensor([data[1] for data in choice_features], dtype=torch.long)
+        input_mask = torch.tensor([data[2] for data in choice_features], dtype=torch.long)
+        segment_ids = torch.tensor([data[3] for data in choice_features], dtype=torch.long)
+        qid = torch.tensor(sample.qid, dtype=torch.long)
+        label = torch.tensor(sample.label, dtype=torch.long)
+        return input_ids, input_mask, segment_ids, qid, label
+
+
 # Dataloader for the Recall Branch
 class RecallBranchData(data.Dataset):
 
