@@ -6,6 +6,7 @@ import re
 import logging
 import numpy as np
 import math
+import Source.utils as utils
 logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                     datefmt = '%m/%d/%Y %H:%M:%S',
                     level = logging.INFO)
@@ -363,3 +364,43 @@ class RecallBranchData(data.Dataset):
         qid = torch.tensor(sample.qid, dtype=torch.long)
         label = torch.tensor(sample.label, dtype=torch.long)
         return sample_input_ids, sample_input_mask, sample_segment_ids, qid, label
+
+
+# Dataloader for branches fusion
+class FusionDataloader(data.Dataset):
+
+    def __init__(self, args, split):
+        df = load_knowit_data(args, split)
+        self.labels = (df['idxCorrect'] - 1).to_list()
+
+        # Branches pre-computed features
+        read_features = utils.load_obj(os.path.join(args.data_dir, '%s_embeddings' % args.dataset, 'read_branch_embeddings_%s.pckl' % split ))
+        observe_features = utils.load_obj(os.path.join(args.data_dir, '%s_embeddings' % args.dataset, 'observe_branch_embeddings_%s.pckl' % split ))
+        recall_features = utils.load_obj(os.path.join(args.data_dir, '%s_embeddings' % args.dataset, 'recall_branch_embeddings_%s.pckl' % split ))
+
+        self.read_features = np.reshape(read_features, (int(read_features.shape[0]/4),4,768))
+        self.observe_features = np.reshape(observe_features, (int(observe_features.shape[0]/4),4,768))
+        self.recall_features = np.reshape(recall_features[0], (int(recall_features[0].shape[0]/4),5,4,768))
+        self.recall_logits_slice = recall_features[1]
+
+        self.num_samples = len(self.labels)
+        logger.info('Dataloader with %d samples' % self.num_samples)
+
+    def __len__(self):
+        return self.num_samples
+
+    def __getitem__(self, index):
+
+        label = self.labels[index]
+        outputs = [label, index]
+        inputs = []
+
+        in_read_feat = self.read_features[index,:]
+        in_obs_feat = self.observe_features[index,:]
+        recall_slices = self.recall_features[index,:]
+        recall_logits_slice = self.recall_logits_slice[index,:]
+        idx_slice, _ = np.unravel_index(recall_logits_slice.argmax(), recall_logits_slice.shape)
+        in_recall_feat = recall_slices[idx_slice,:]
+        inputs.extend([in_read_feat, in_obs_feat, in_recall_feat])
+
+        return inputs, outputs

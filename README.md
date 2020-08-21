@@ -34,7 +34,6 @@ For data preparation, follow instructions in [DATA.md](DATA.md).
 
 ### ROLL on KnowIT VQA
 
-#### Training
 1. **Start Visdom Server**. To visualize the training plots, first start the Visdom server: `python -m visdom.server`. 
 Plots can be found by visiting `http://localhost:8097` in a browser.
 2. **Pretrain branches**. The three branches (read, observe, recall) are first pretrained independently:
@@ -54,23 +53,34 @@ Plots can be found by visiting `http://localhost:8097` in a browser.
     ```
 3. **Multimodality fusion**. The outputs from the branches are fused and the network is trained one last time using the modality weighting mechanism.
     ```
-    # TODO
+    python Source/fuse_branches.py --dataset knowit
     ```
-    
-#### Evaluation
-TODO.
 
 ### ROLL on TVQA+
 TODO.
 
+### Citation
+
+If you find this code useful, please cite our work:
+
+````
+@InProceedings{garcia2020knowledge,
+   author    = {Noa Garcia and Yuta Nakashima},
+   title     = {Knowledge-Based Video Question Answering with Unsupervised Scene Descriptions},
+   booktitle = {Proceedings of the European Conference on Computer Vision},
+   year      = {2020},
+}
+````
+
+````
+@InProceedings{garcia2020knowit,
+   author    = {Noa Garcia and Mayu Otani and Chenhui Chu and Yuta Nakashima},
+   title     = {KnowIT VQA: Answering Knowledge-Based Questions about Videos},
+   booktitle = {Proceedings of the Thirty-Fourth AAAI Conference on Artificial Intelligence},
+   year      = {2020},
+}
+````
 
 ## TODO
-- [X] Read branch
-- [X] Observe branch
-- [X] Recall branch
-- [ ] Fusion
 - [ ] TVQA+ code
-- [ ] Results table
-- [ ] Examples
-- [ ] Citation
 

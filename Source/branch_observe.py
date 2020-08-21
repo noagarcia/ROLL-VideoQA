@@ -81,7 +81,7 @@ def pretrain_observe_branch(args):
     modeldir = os.path.join('Training', args.train_name)
     if not os.path.exists(modeldir):
         os.makedirs(modeldir)
-    outdatadir = os.path.join(args.data_dir, args.dataset + ('_embeddings'))
+    outdatadir = os.path.join(args.data_dir, args.dataset)
     if not os.path.exists(outdatadir):
         os.makedirs(outdatadir)
 

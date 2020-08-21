@@ -117,7 +117,7 @@ def pretrain_recall_branch(args):
         valDataObject = RecallBranchData(args, split='val', tokenizer=tokenizer)
 
         # Start training
-        logger.info('*** Read branch training ***')
+        logger.info('*** Recall branch training ***')
         branch_training(args, model, modeldir, n_gpu, trainDataObject, valDataObject)
 
 
@@ -128,14 +128,14 @@ def pretrain_recall_branch(args):
         model = torch.nn.DataParallel(model)
 
     # Get Recall Branch embeddings for each dataset split
-    logger.info('*** Get read branch embeddgins for each data split ***')
+    logger.info('*** Get recall branch embeddgins for each data split ***')
     trainDataObject = RecallBranchData(args, split='train', tokenizer=tokenizer)
     valDataObject = RecallBranchData(args, split='val', tokenizer=tokenizer)
     testDataObject = RecallBranchData(args, split='test', tokenizer=tokenizer)
-    branch_embeddings(args, model, outdatadir, trainDataObject, split='train', branch_name='read')
-    branch_embeddings(args, model, outdatadir, valDataObject, split='val', branch_name='read')
-    branch_embeddings(args, model, outdatadir, testDataObject, split='test', branch_name='read')
-    logger.info('*** Pretraining read branch done!')
+    branch_embeddings(args, model, outdatadir, trainDataObject, split='train', branch_name='recall')
+    branch_embeddings(args, model, outdatadir, valDataObject, split='val', branch_name='recall')
+    branch_embeddings(args, model, outdatadir, testDataObject, split='test', branch_name='recall')
+    logger.info('*** Pretraining recall branch done!')
 
 
 if __name__ == "__main__":

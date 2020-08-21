@@ -9,9 +9,7 @@ from torch.utils.data import DataLoader
 from torch import nn
 import pandas as pd
 from Source import utils
-import torch.utils.data as data
 import time
-from pytorch_transformers.tokenization_bert import BertTokenizer
 
 import logging
 logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
@@ -28,9 +26,9 @@ def get_params():
     parser.add_argument("--do_lower_case", default=True)
     parser.add_argument('--seed', type=int, default=181)
     parser.add_argument("--lr", default=5e-5, type=float)
+    parser.add_argument("--workers", default=8)
     parser.add_argument("--device", default='cuda', type=str, help="cuda, cpu")
     parser.add_argument("--batch_size", default=32, type=int)
-    parser.add_argument("--workers", default=8)
     parser.add_argument('--momentum', default=0.9)
     parser.add_argument('--nepochs', default=100, help='Number of epochs', type=int)
     parser.add_argument('--patience', default=15, type=int)
@@ -39,9 +37,48 @@ def get_params():
     parser.add_argument('--weight_loss_observe', default=0.06, type=float)
     parser.add_argument('--weight_loss_recall', default=0.08, type=float)
     parser.add_argument('--weight_loss_final', default=0.80, type=float)
+    parser.add_argument('--use_read', action='store_true')
+    parser.add_argument('--use_observe', action='store_true')
+    parser.add_argument('--use_recall', action='store_true')
     parser.add_argument("--train_name", default='FusionMW', type=str)
     args, unknown = parser.parse_known_args()
     return args
+
+
+class FusionMW(nn.Module):
+    def __init__(self):
+        super(FusionMW, self).__init__()
+        self.fc_read = nn.Sequential(nn.Linear(768, 1))
+        self.fc_obs = nn.Sequential(nn.Linear(768, 1))
+        self.fc_recall = nn.Sequential(nn.Linear(768, 1))
+        self.dropout = nn.Dropout(0.5)
+        self.classifier = nn.Sequential(nn.Linear(3, 1))
+
+    def forward(self, in_read_feat, in_obs_feat, in_recall_feat):
+
+        num_choices = in_read_feat.shape[1]
+
+        # R, O, LL features
+        flat_in_read_feat = in_read_feat.view(-1, in_read_feat.size(-1))
+        flat_in_obs_feat = in_obs_feat.view(-1, in_obs_feat.size(-1))
+        flat_in_recall_feat = in_recall_feat.view(-1, in_recall_feat.size(-1))
+        flat_in_read_feat = self.dropout(flat_in_read_feat)
+        flat_in_obs_feat = self.dropout(flat_in_obs_feat)
+        flat_in_recall_feat = self.dropout(flat_in_recall_feat)
+
+        # R, O, LL scores
+        read_scores = self.fc_read(flat_in_read_feat)
+        obs_scores = self.fc_obs(flat_in_obs_feat)
+        recall_scores = self.fc_recall(flat_in_recall_feat)
+        reshaped_read_scores = read_scores.view(-1, num_choices)
+        reshaped_obs_scores = obs_scores.view(-1, num_choices)
+        reshaped_recall_scores = recall_scores.view(-1, num_choices)
+
+        # Final score
+        all_feat = torch.squeeze(torch.cat([read_scores, obs_scores, recall_scores], 1), 1)
+        final_scores = self.classifier(all_feat)
+        reshaped_final_scores = final_scores.view(-1, num_choices)
+        return [reshaped_read_scores, reshaped_obs_scores, reshaped_recall_scores, reshaped_final_scores]
 
 
 class LanguageData(object):
@@ -60,109 +97,9 @@ class LanguageData(object):
         ]
 
 
-class FusionDataloader(data.Dataset):
+def trainEpoch(args, train_loader, model, criterion, optimizer, epoch):
 
-    def __init__(self, args, split, mode, tokenizer = None):
-        # mode: scores, features, both
-
-        self.mode = mode
-        self.tokenizer = tokenizer
-        self.max_seq_length = args.max_seq_length
-
-        # Load Data
-        if split == 'train':
-            input_file = os.path.join(args.data_dir, args.csvtrain)
-        elif split == 'val':
-            input_file = os.path.join(args.data_dir, args.csvval)
-        elif split == 'test':
-            input_file = os.path.join(args.data_dir, args.csvtest)
-
-        df = pd.read_csv(input_file, delimiter='\t')
-        self.labels = (df['idxCorrect'] - 1).to_list()
-        self.read_scores = utils.load_obj('data/branches_features/read_scores_%s.pckl' % split)
-        self.observe_scores = utils.load_obj('data/branches_features/observe_scores_%s.pckl' % split)
-        # self.recall_scores = utils.load_obj('data/branches_features/recall_scores_%s.pckl' % split)
-        self.recall_scores = utils.load_obj('data/branches_features/recall_humankg_scores_%s.pckl' % split)
-
-        read_features = utils.load_obj('data/branches_features/read_features_%s.pckl' % split)
-        observe_features = utils.load_obj('data/branches_features/observe_features_%s.pckl' % split)
-        # recall_features = utils.load_obj('data/branches_features/recall_features_%s.pckl' % split)
-        recall_features = utils.load_obj('data/branches_features/recall_humankg_features_%s.pckl' % split)
-        qa_features = utils.load_obj('data/branches_features/qa_features_%s.pckl' % split)
-        self.read_features = np.reshape(read_features, (int(read_features.shape[0]/4),4,768))
-        self.observe_features = np.reshape(observe_features, (int(observe_features.shape[0]/4),4,768))
-        # self.recall_features = np.reshape(recall_features[0], (int(recall_features[0].shape[0]/4),5,4,768))
-        self.recall_features = np.reshape(recall_features, (int(recall_features.shape[0]/4),4,768))
-        self.recall_logits_slice = recall_features[1]
-        self.qa_features = np.reshape(qa_features, (int(qa_features.shape[0] / 4), 4, 768))
-
-        self.num_samples = len(self.labels)
-
-        logger.info('Dataloader with %d samples' % self.num_samples)
-
-
-    def __len__(self):
-        return self.num_samples
-
-    def __getitem__(self, index):
-
-        label = self.labels[index]
-        outputs = [label, index]
-        inputs = []
-
-        if self.mode == 'scores' or self.mode == 'both':
-            in_read_scores = self.read_scores[index,:]
-            in_obs_scores = self.observe_scores[index,:]
-            in_recall_scores = self.recall_scores[index,:]
-            inputs.extend([in_read_scores, in_obs_scores, in_recall_scores])
-
-        if not self.mode == 'scores':
-            in_read_feat = self.read_features[index,:]
-            in_obs_feat = self.observe_features[index,:]
-            # recall_slices = self.recall_features[index,:]
-            # recall_logits_slice = self.recall_logits_slice[index,:]
-            # idx_slice, _ = np.unravel_index(recall_logits_slice.argmax(), recall_logits_slice.shape)
-            # in_recall_feat = recall_slices[idx_slice,:]
-            in_recall_feat = self.recall_features[index,:]
-            inputs.extend([in_read_feat, in_obs_feat, in_recall_feat])
-
-        if self.mode == 'features+qa':
-
-            sample = self.samples[index]
-            question_tokens = self.tokenizer.tokenize(sample.question)
-            choice_features = []
-            for answer_index, answer in enumerate(sample.answers):
-                start_tokens = question_tokens[:]
-                ending_tokens = self.tokenizer.tokenize(answer)
-                _truncate_seq_pair_inv(start_tokens, ending_tokens, self.max_seq_length - 3)
-                tokens = [self.tokenizer.cls_token] + start_tokens + [self.tokenizer.sep_token] + ending_tokens + [self.tokenizer.sep_token]
-                segment_ids = [0] * (len(start_tokens) + 2) + [1] * (len(ending_tokens) + 1)
-                input_ids = self.tokenizer.convert_tokens_to_ids(tokens)
-                input_mask = [1] * len(input_ids)
-                padding = [self.tokenizer.pad_token_id] * (self.max_seq_length - len(input_ids))
-                input_ids += padding
-                input_mask += padding
-                segment_ids += padding
-                choice_features.append((tokens, input_ids, input_mask, segment_ids))
-
-            input_ids = torch.tensor([data[1] for data in choice_features], dtype=torch.long)
-            input_mask = torch.tensor([data[2] for data in choice_features], dtype=torch.long)
-            segment_ids = torch.tensor([data[3] for data in choice_features], dtype=torch.long)
-
-            inputs.extend([input_ids, segment_ids, input_mask])
-
-        elif self.mode == 'features+qapre':
-            in_qa_feat = self.qa_features[index,:]
-            inputs.extend([in_qa_feat])
-
-        return inputs, outputs
-
-
-def trainEpoch(args, train_loader, model, criterion, optimizer, epoch, val_loader = None, num_batches = 0):
-
-    read_losses = utils.AverageMeter()
-    obs_losses = utils.AverageMeter()
-    recall_losses = utils.AverageMeter()
+    read_losses, obs_losses, recall_losses = utils.AverageMeter(), utils.AverageMeter(), utils.AverageMeter()
     final_losses = utils.AverageMeter()
     losses = utils.AverageMeter()
     model.train()
@@ -192,11 +129,11 @@ def trainEpoch(args, train_loader, model, criterion, optimizer, epoch, val_loade
                      args.weight_loss_recall * recall_loss + \
                      args.weight_loss_final * final_loss
 
+        # Track loss
         read_losses.update(read_loss.data.cpu().numpy(), input[0].size(0))
         obs_losses.update(obs_loss.data.cpu().numpy(), input[0].size(0))
         recall_losses.update(recall_loss.data.cpu().numpy(), input[0].size(0))
         final_losses.update(final_loss.data.cpu().numpy(), input[0].size(0))
-
         losses.update(train_loss.data.cpu().numpy(), input[0].size(0))
 
         # Backpropagate loss and update weights
@@ -209,12 +146,8 @@ def trainEpoch(args, train_loader, model, criterion, optimizer, epoch, val_loade
               'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
             epoch, batch_idx, len(train_loader), 100. * batch_idx / len(train_loader), loss=losses))
 
-        # acc = valEpoch(args, val_loader, model, criterion, (epoch*num_batches)+batch_idx)
-
-
     # Plot loss after all mini-batches have finished
     plotter.plot('loss', 'train', 'Class Loss', epoch, losses.avg)
-    # return acc
 
 
 def valEpoch(args, val_loader, model, criterion, epoch):
@@ -285,7 +218,7 @@ def valEpoch(args, val_loader, model, criterion, epoch):
     return acc
 
 
-def train(args, outdir):
+def train(args, modeldir):
 
     # Set GPU
     n_gpu = torch.cuda.device_count()
@@ -297,30 +230,19 @@ def train(args, outdir):
         torch.cuda.manual_seed_all(args.seed)
 
     # Create training directory
-    if not os.path.exists(outdir):
-        os.makedirs(outdir)
+    if not os.path.exists(modeldir):
+        os.makedirs(modeldir)
 
-    # Model
-    tokenizer = None
-    if args.model == 'multitask_qaatt':
-        tokenizer = BertTokenizer.from_pretrained(args.bert_model, do_lower_case=args.do_lower_case)
-        model = FusionFCftMultitaskAtt(args)
-        mode = 'features+qa'
-    elif args.model == 'multitask_qaattpre':
-        model = FusionFCftMultitaskAttPre(args)
-        mode = 'features+qapre'
-    elif args.model == 'multitask':
-        model = FusionFCftMultitask()
-        mode = 'features'
-
+    # Model, optimizer and loss
+    model = FusionMW()
     if args.device == "cuda":
         model.cuda()
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
     class_loss = nn.CrossEntropyLoss().cuda()
 
     # Data
-    trainDataObject = FusionDataloader(args, split='train', mode=mode, tokenizer=tokenizer)
-    valDataObject = FusionDataloader(args, split='val', mode=mode, tokenizer=tokenizer)
+    trainDataObject = FusionDataloader(args, split='train')
+    valDataObject = FusionDataloader(args, split='val')
     train_loader = torch.utils.data.DataLoader(trainDataObject, batch_size=args.batch_size, shuffle=True, pin_memory=True, num_workers=args.workers)
     val_loader = torch.utils.data.DataLoader(valDataObject, batch_size=args.batch_size, shuffle=True, pin_memory=True, num_workers=args.workers)
     num_batches = train_loader.__len__()
@@ -334,7 +256,7 @@ def train(args, outdir):
     for epoch in range(0, args.nepochs):
 
         # Epoch
-        trainEpoch(args, train_loader, model, class_loss, optimizer, epoch, val_loader, num_batches)
+        trainEpoch(args, train_loader, model, class_loss, optimizer, epoch)
         current_val = valEpoch(args, val_loader, model, class_loss, epoch)
 
         # Check patience
@@ -355,39 +277,26 @@ def train(args, outdir):
                  'optimizer': optimizer.state_dict(),
                  'pattrack': pattrack,
                  'curr_val': current_val}
-        filename = os.path.join(outdir, 'model_latest.pth.tar')
+        filename = os.path.join(modeldir, 'model_latest.pth.tar')
         torch.save(state, filename)
         if is_best:
-            filename = os.path.join(outdir, 'model_best.pth.tar')
+            filename = os.path.join(modeldir, 'model_best.pth.tar')
             torch.save(state, filename)
 
 
 def evaluate(args, modeldir):
 
     # Model
-    tokenizer = None
-    if args.model == 'multitask_qaatt':
-        tokenizer = BertTokenizer.from_pretrained(args.bert_model, do_lower_case=args.do_lower_case)
-        model = FusionFCftMultitaskAtt(args)
-        mode = 'features+qa'
-    elif args.model == 'multitask_qaattpre':
-        model = FusionFCftMultitaskAttPre(args)
-        mode = 'features+qapre'
-    elif args.model == 'multitask':
-        model = FusionFCftMultitask()
-        mode = 'features'
-
-
+    model = FusionMW()
     if args.device == "cuda":
         model.cuda()
-
-    # Load best model
+    class_loss = nn.CrossEntropyLoss().cuda()
     logger.info("=> loading checkpoint from '{}'".format(modeldir))
     checkpoint = torch.load(os.path.join(modeldir, 'model_best.pth.tar'))
     model.load_state_dict(checkpoint['state_dict'])
 
     # Data
-    evalDataObject = FusionDataloader(args, split='test', mode=mode, tokenizer=tokenizer)
+    evalDataObject = FusionDataloader(args, split='test')
     test_loader = torch.utils.data.DataLoader(evalDataObject, batch_size=args.batch_size, shuffle=False, pin_memory=(not args.no_cuda), num_workers=args.workers)
     logger.info('Evaluation loader with %d samples' % test_loader.__len__())
 
@@ -437,36 +346,40 @@ def evaluate(args, modeldir):
             scores_recall = np.concatenate((scores_recall, output[2].cpu().numpy()), axis=0)
             scores_final = np.concatenate((scores_final, output[3].cpu().numpy()), axis=0)
 
-    # Compute Accuracy
-    print('************* %s' % args.model)
-    df = pd.read_csv('data/knowit_data_test.csv', delimiter='\t')
-    logger.info('Average time per sample %.02f ms for %d samples' % (batch_time.sum / evalDataObject.num_samples * 1000, evalDataObject.num_samples))
-    print_acc(df, out, label, index)
-
-    utils.save_obj(label, os.path.join(outdir, 'test_labels.pckl'))
-    utils.save_obj(out, os.path.join(outdir, 'test_predicted.pckl'))
-    utils.save_obj(index, os.path.join(outdir, 'test_indices.pckl'))
-
-    utils.save_obj(scores_read, os.path.join(outdir, 'test_scores_read.pckl'))
-    utils.save_obj(scores_observe, os.path.join(outdir, 'test_scores_observe.pckl'))
-    utils.save_obj(scores_recall, os.path.join(outdir, 'test_scores_recall.pckl'))
-    utils.save_obj(scores_final, os.path.join(outdir, 'test_scores_final.pckl'))
+    # Print accuracy
+    df = pd.read_csv(os.path.join(args.data_dir, 'knowit_data/knowit_data_test.csv'), delimiter='\t')
+    utils.accuracy(df, out, label, index)
 
 
 if __name__ == "__main__":
 
     args = get_params()
 
-    if args.model not in accepted_models:
-        logger.error("Model not recognised")
-    else:
-        train_name = 'Fusion_humankgretrieved_%s_%d_%d_%d_%d_seed%d' % (args.model, args.weight_loss_read*100, args.weight_loss_observe*100,
-                                                args.weight_loss_recall*100, args.weight_loss_final*100, args.seed)
-        outdir = 'Training/Fusion/Multitask/' + train_name + '/'
+    assert args.dataset in ['knowit', 'tvqa']
 
-        if not os.path.isfile(os.path.join(outdir, 'model_best.pth.tar')):
-            global plotter
-            plotter = utils.VisdomLinePlotter(env_name=train_name)
-            train(args, outdir)
+    if args.dataset == 'knowit':
+        from Source.dataloader_knowit import FusionDataloader
+        args.descriptions_file = 'Data/knowit_observe/scenes_descriptions.csv'
+    elif args.dataset == 'tvqa':
+        # from Source.dataloader_tvqa import FusionDataloader
+        logger.error('Sorry, TVQA+ dataset not implemented yet.')
+        import sys
+        sys.exit(0)
 
-        evaluate(args, outdir)
+    # Create training and data directories
+    modeldir = os.path.join('Training', args.train_name)
+    if not os.path.exists(modeldir):
+        os.makedirs(modeldir)
+
+    outdatadir = os.path.join(args.data_dir, args.dataset)
+    if not os.path.exists(outdatadir):
+        os.makedirs(outdatadir)
+
+    # Train if model does not exist
+    if not os.path.isfile(os.path.join(modeldir, 'model_best.pth.tar')):
+        global plotter
+        plotter = utils.VisdomLinePlotter(env_name=args.train_name)
+        train(args, modeldir)
+
+    # Evaluation
+    evaluate(args, modeldir)

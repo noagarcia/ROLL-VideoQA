@@ -255,6 +255,42 @@ def create_description(faces_scene, place_scene, action_scene, objs_scene):
     return vis_description
 
 
+
+def create_description_onlygraph(faces_scene, place_scene, action_scene, objs_scene):
+
+    # Characters
+    faces_sentence = ' '.join(faces_scene)
+
+    # Places
+    places_sentence =  place_scene
+
+
+    # Actions
+    actions_sentence = action_scene[0].lower() + action_scene[1:]
+
+    # Objects sentences
+    subjs, predicates, objs, scores = objs_scene
+    objects_sentences = []
+    for person in faces_scene:
+        triplets = zip(subjs, predicates, objs)
+
+        # Find triplets for this person
+        triplets_person = [(sub, pred, obj) for sub, pred, obj in triplets if (sub == person or obj == person)]
+        if len(triplets_person) < 1:
+            continue
+        this_subj, this_predicate, this_obj = zip(*triplets_person)
+
+        for s, p, o in zip(this_subj, this_predicate, this_obj):
+            sentence = '%s %s %s.' % (s, p, o)
+            objects_sentences.append(sentence)
+
+    objects_sentences = ' '.join(objects_sentences)
+
+    # Final description
+    vis_description = faces_sentence + ' ' + actions_sentence + ' ' + places_sentence + ' ' + objects_sentences
+    return vis_description
+
+
 def generate_scene_description(args):
 
     # Prepare data
