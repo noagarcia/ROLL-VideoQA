@@ -1,6 +1,6 @@
 ## Knowledge-Based Video Question Answering with Unsupervised Scene Descriptions
 
-This is the PyTorch implementation of our ROLL model. 
+This is the PyTorch implementation of our ROLL model for VideoQA. ROLL has been recently published at [ECCV 2020](https://eccv2020.eu/). Find the technical paper [here](https://arxiv.org/pdf/2007.08751.pdf).
 
 ![roll](https://github.com/noagarcia/ROLL-VideoQA/blob/master/Images/model.png?raw=true)
 
