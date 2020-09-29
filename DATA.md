@@ -9,12 +9,13 @@ Both datasets contain videos from the Big Bang Theory, so list of characters and
 1. Download annotations from [here](https://knowit-vqa.github.io/) and extract the zip file contents into `Data/` directory. 
 You should get 3 csv files inside `Data/knowit_data/`.
 2. The episode summaries used as external knowledge are in `Data/knowledge_base/tbbt_summaries.csv`. 
-3. The video story identification has been already pre-computed and can be found in `Data/knwoledge_base/`.
+3. The video story identification has been already pre-computed and can be found in `Data/knowledge_base/`.
 4. For the Observe Branch we provide the pre-computed visual features: 
     - [Download](https://drive.google.com/open?id=1DuIuXBJuO47JkZYXROOGB1q0XncxF5Lt) zip file with pre-computed characters, places, and actions. 
     Extract the three files in `Data/knowit_observe/` directory.
-    - [Object relations](https://knowit-vqa.s3-ap-northeast-1.amazonaws.com/knowit-vrd.zip) zip file (146.8 GB) with the pre-computed object relations extracted with [VRD](https://github.com/facebookresearch/Large-Scale-VRD).
-    
+    - [Object relations](https://knowit-vqa.s3-ap-northeast-1.amazonaws.com/knowit-vrd.zip): zip file (146.8 GB) with the pre-computed object relations extracted with [VRD](https://github.com/facebookresearch/Large-Scale-VRD).
+    - [Actions frame list](https://drive.google.com/file/d/1ZEjtFHx1InsEgssTDC-rEH2kDoCM57MZ/view?usp=sharing): csv file (434.2 MB) with the frames used in the action prediction module. Download the file into the `Data/` directory.
+
 The final `Data/` directory structure should look like this:
 ``` 
 Data
